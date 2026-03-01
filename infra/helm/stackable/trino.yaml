@@ -1,0 +1,54 @@
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCluster
+metadata:
+  name: lukewarm-trino
+spec:
+  image:
+    productVersion: "442"
+  clusterConfig:
+    catalogLabelSelector:
+      matchLabels:
+        trino: lukewarm-trino
+  coordinators:
+    roleGroups:
+      default:
+        replicas: 1
+        config:
+          resources:
+            cpu:
+              min: "500m"
+              max: "2000m"
+            memory:
+              limit: "2Gi"
+  workers:
+    roleGroups:
+      default:
+        replicas: 1
+        config:
+          resources:
+            cpu:
+              min: "500m"
+              max: "2000m"
+            memory:
+              limit: "2Gi"
+---
+apiVersion: trino.stackable.tech/v1alpha1
+kind: TrinoCatalog
+metadata:
+  name: iceberg
+  labels:
+    trino: lukewarm-trino
+spec:
+  connector:
+    iceberg:
+      metastore:
+        thrift:
+          connection: lukewarm-hive
+      s3:
+        inline:
+          host: lukewarm-minio
+          port: 9000
+          accessStyle: Path
+          credentials:
+            secretClass: lukewarm-minio-credentials

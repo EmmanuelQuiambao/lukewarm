@@ -1,0 +1,64 @@
+---
+# SparkApplication: Kafka -> Iceberg structured streaming job
+# This reads raw data from Kafka topics and writes to Iceberg tables via
+# Spark Structured Streaming. It acts as the ingestion layer that lands
+# raw normalized data into the cold storage tier that Lukewarm reads from.
+#
+# The actual streaming logic lives in the application code (e.g. src/jobs/).
+# Update mainApplicationFile to point at your packaged job.
+apiVersion: spark.stackable.tech/v1alpha1
+kind: SparkApplication
+metadata:
+  name: lukewarm-kafka-to-iceberg
+spec:
+  image:
+    productVersion: "3.5.1"
+  sparkImage:
+    custom: ""
+    productVersion: "3.5.1"
+
+  mode: cluster
+  mainApplicationFile: "local:///app/jobs/kafka_to_iceberg.py"
+
+  deps:
+    packages:
+      # Iceberg Spark runtime
+      - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2
+      # Kafka source for Spark Structured Streaming
+      - org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
+      # S3A connector for MinIO/S3
+      - org.apache.hadoop:hadoop-aws:3.3.4
+
+  sparkConf:
+    # Iceberg catalog via Hive Metastore
+    spark.sql.extensions: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+    spark.sql.catalog.iceberg: org.apache.iceberg.spark.SparkCatalog
+    spark.sql.catalog.iceberg.type: hive
+    spark.sql.catalog.iceberg.uri: thrift://lukewarm-hive:9083
+
+    # MinIO (S3-compatible) storage
+    spark.hadoop.fs.s3a.endpoint: http://lukewarm-minio:9000
+    spark.hadoop.fs.s3a.access.key: minioadmin
+    spark.hadoop.fs.s3a.secret.key: minioadmin
+    spark.hadoop.fs.s3a.path.style.access: "true"
+    spark.hadoop.fs.s3a.impl: org.apache.hadoop.fs.s3a.S3AFileSystem
+    spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
+
+  driver:
+    config:
+      resources:
+        cpu:
+          min: "500m"
+          max: "1000m"
+        memory:
+          limit: "1Gi"
+
+  executors:
+    replicas: 1
+    config:
+      resources:
+        cpu:
+          min: "500m"
+          max: "2000m"
+        memory:
+          limit: "2Gi"

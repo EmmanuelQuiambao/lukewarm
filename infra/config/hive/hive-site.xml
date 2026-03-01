@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Hive Metastore configuration.
+  starburstdata/hive:3.1.3 handles S3/MinIO and JDBC connection via
+  environment variables — this file is reserved for any additional
+  Hive-level overrides if needed.
+-->
+<configuration>
+</configuration>

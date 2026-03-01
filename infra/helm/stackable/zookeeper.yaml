@@ -1,0 +1,27 @@
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: lukewarm-zookeeper
+spec:
+  image:
+    productVersion: "3.9.2"
+  servers:
+    roleGroups:
+      default:
+        replicas: 1
+        config:
+          resources:
+            cpu:
+              min: "200m"
+              max: "500m"
+            memory:
+              limit: "512Mi"
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: lukewarm-kafka-znode
+spec:
+  clusterRef:
+    name: lukewarm-zookeeper

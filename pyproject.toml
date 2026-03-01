@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lukewarm"
+version = "0.1.0"
+description = "Cost-effective declarative SQL models over Apache Iceberg using a hot/cold read pattern"
+requires-python = ">=3.11"
+license = { text = "TBD" }
+
+dependencies = [
+    # Trino Python client — submits queries to the Trino coordinator
+    "trino>=0.328.0",
+    # Apache Iceberg Python — snapshot tracking, table metadata reads
+    "pyiceberg[s3fs,pyarrow]>=0.7.0",
+    # SQL parsing and AST-level query rewriting
+    "sqlglot>=23.0.0",
+    # Cron-based scheduling
+    "apscheduler>=3.10.0",
+    # CLI
+    "click>=8.1.0",
+    # Config and model validation
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+lukewarm = "lukewarm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lukewarm*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

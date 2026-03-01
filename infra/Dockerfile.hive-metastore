@@ -1,0 +1,18 @@
+FROM apache/hive:4.0.0
+
+USER root
+
+# Add PostgreSQL JDBC driver (not included in the base image)
+RUN apt-get update -qq && apt-get install -y -q wget \
+    && wget -q https://jdbc.postgresql.org/download/postgresql-42.7.3.jar \
+         -O /opt/hive/lib/postgresql-42.7.3.jar \
+    && apt-get remove -y wget && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Hadoop S3A + AWS SDK jars to Hive classpath (needed for MinIO/S3 access)
+RUN ln -s /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-3.3.6.jar \
+          /opt/hive/lib/hadoop-aws-3.3.6.jar \
+ && ln -s /opt/hadoop/share/hadoop/tools/lib/aws-java-sdk-bundle-1.12.367.jar \
+          /opt/hive/lib/aws-java-sdk-bundle-1.12.367.jar
+
+USER hive
