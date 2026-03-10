@@ -1,3 +1,10 @@
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+  AIRFLOW__CORE__FERNET_KEY: "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg="
+  AIRFLOW__WEBSERVER__SECRET_KEY: "lukewarm-local-dev"
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
 services:
 
   # ─────────────────────────────────────────────
@@ -75,6 +82,7 @@ services:
       - "8080:8080"
     volumes:
       - ./config/trino/catalog:/etc/trino/catalog
+      - ../scripts:/etc/trino/scripts
 
   # ─────────────────────────────────────────────
   # Streaming
@@ -87,10 +95,10 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -106,6 +114,123 @@ services:
       retries: 5
       start_period: 30s
 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: lukewarm-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: lukewarm
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ─────────────────────────────────────────────
+  # Spark (Stackable-equivalent)
+  # Mirrors: Stackable SparkApplication (productVersion: 3.5.1)
+  #
+  # The Stackable manifest runs Spark as a one-shot SparkApplication in cluster
+  # mode. Here we run a persistent standalone cluster so jobs can be submitted
+  # interactively or via Airflow DAGs.
+  # ─────────────────────────────────────────────
+  spark-master:
+    image: apache/spark:3.5.1
+    container_name: lukewarm-spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports:
+      - "8082:8080"   # Spark master UI
+      - "7077:7077"   # Spark master port
+    volumes:
+      - ../jobs:/opt/spark/jobs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    container_name: lukewarm-spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    volumes:
+      - ../jobs:/opt/spark/jobs
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--memory", "2G", "--cores", "2", "spark://spark-master:7077"]
+
+  # ─────────────────────────────────────────────
+  # Airflow
+  # ─────────────────────────────────────────────
+  airflow-postgres:
+    image: postgres:16
+    container_name: lukewarm-airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    image: apache/airflow:2.10.0
+    container_name: lukewarm-airflow-init
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    environment:
+      <<: *airflow-env
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@lukewarm.local || true
+      "
+    restart: on-failure
+
+  airflow-webserver:
+    image: apache/airflow:2.10.0
+    container_name: lukewarm-airflow-webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *airflow-env
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  airflow-scheduler:
+    image: apache/airflow:2.10.0
+    container_name: lukewarm-airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *airflow-env
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+    command: scheduler
+
 volumes:
   minio-data:
   kafka-data:
+  airflow-postgres-data:
+  airflow-logs:
